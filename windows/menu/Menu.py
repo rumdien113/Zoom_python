@@ -1,7 +1,8 @@
+import os
 import socket
 import threading
 import tkinter as tk
-from tkinter import simpledialog, messagebox, ttk
+from tkinter import simpledialog, messagebox, ttk, filedialog
 import random
 from datetime import datetime
 
@@ -14,7 +15,11 @@ class Server:
         self.client_info = []  # Lưu thông tin của các client: (socket, addr, username, join_time)
         self.update_participants_callback = update_participants_callback
         self.running = True
+        if not os.path.exists("server_files"):
+            os.makedirs("server_files")
+
         threading.Thread(target=self.accept_clients).start()
+
 
     def accept_clients(self):
         while self.running:
@@ -58,11 +63,30 @@ class Server:
                         # Xử lý thông báo ngắt kết nối
                         username = message.split(":", 1)[1]
                         self.handle_disconnect(client_socket, username)
+                    elif message.startswith("FILE:"):
+                        # Xử lý file
+                        _, filename, filesize = message.split(":")
+                        filesize = int(filesize)
+                        self.receive_file(client_socket, filename, filesize)
                     else:
                         self.broadcast_message(message, client_socket)
             except Exception as e:
                 print(f"Error handling client message: {e}")
                 break
+
+    def receive_file(self, client_socket, filename, filesize):
+        with open(f"server_files/{filename}", "wb") as f:
+            remaining = filesize
+            while remaining:
+                chunk_size = 1024 if remaining >= 1024 else remaining
+                chunk = client_socket.recv(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+                remaining -= len(chunk)
+
+        # Thông báo cho tất cả các client về file mới
+        self.broadcast_message(f"FILE:{filename}:{filesize}", client_socket)
 
     def handle_disconnect(self, client_socket, username):
         # Xóa client khỏi danh sách và thông báo cho các client còn lại
@@ -122,12 +146,39 @@ class Client:
                     # Nhận danh sách người tham gia
                     participants_data = eval(message.split(":", 1)[1])  # Chuyển đổi chuỗi thành danh sách
                     self.update_participants_callback(participants_data)
+                elif message.startswith("FILE:"):
+                    # Nhận file
+                    _, filename, filesize = message.split(":")
+                    filesize = int(filesize)
+                    self.receive_file(filename, filesize)
                 else:
                     self.display_message_callback(message)
             except Exception as e:
                 print(f"Error receiving message: {e}")
                 break
         self.client_socket.close()
+
+    def send_file(self, filepath):
+        with open(filepath, "rb") as f:
+            while True:
+                chunk = f.read(1024)
+                if not chunk:
+                    break
+                self.client_socket.send(chunk)
+
+    def receive_file(self, filename, filesize):
+        save_path = tk.filedialog.asksaveasfilename(defaultextension=".txt", initialfile=filename)
+        if save_path:
+            with open(save_path, "wb") as f:
+                remaining = filesize
+                while remaining:
+                    chunk_size = 1024 if remaining >= 1024 else remaining
+                    chunk = self.client_socket.recv(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    remaining -= len(chunk)
+            self.display_message_callback(f"Received file: {filename}")
 
     def disconnect(self):
         self.client_socket.send(f"DISCONNECT:{self.username}".encode())  # Gửi thông báo ngắt kết nối
@@ -148,6 +199,8 @@ class Menu:
     def create_menu(self):
         self.notebook = ttk.Notebook(self.root)
         self.chat_tab = tk.Frame(self.notebook)
+        self.send_file_btn = tk.Button(self.chat_tab, text="Send File", command=self.send_file)
+        self.send_file_btn.pack(side=tk.LEFT)
         self.participants_tab = tk.Frame(self.notebook)
 
         self.notebook.add(self.chat_tab, text="Chat")
@@ -196,6 +249,13 @@ class Menu:
         except Exception as e:
             messagebox.showerror("Error", f"Could not start server: {e}")
 
+    def send_file(self):
+        filepath = tk.filedialog.askopenfilename()
+        if filepath and self.client:
+            filename = filepath.split("/")[-1]
+            filesize = os.path.getsize(filepath)
+            self.client.send_message(f"FILE:{filename}:{filesize}")
+            self.client.send_file(filepath)
     def join_meeting(self):
         local_ip = socket.gethostbyname(socket.gethostname())  # Get local IP
         port = simpledialog.askstring("Room Code", "Enter the room code (port):")
