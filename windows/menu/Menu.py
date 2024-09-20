@@ -231,9 +231,12 @@ class Menu:
         send_btn.pack(side=tk.LEFT)
 
         # Participants tab layout
-        self.participants_list = tk.Listbox(self.participants_tab, height=20, width=50)
-        self.participants_list.pack(pady=10)
-
+        self.participants_tree = ttk.Treeview(self.participants_tab, columns=("IP", "Username", "Join Time"),
+                                              show='headings')
+        self.participants_tree.heading("IP", text="IP")
+        self.participants_tree.heading("Username", text="Username")
+        self.participants_tree.heading("Join Time", text="Join Time")
+        self.participants_tree.pack(pady=10, fill=tk.BOTH, expand=True)
     def start_new_meeting(self):
         try:
             self.local_ip = socket.gethostbyname(socket.gethostname())  # Get local IP
@@ -348,11 +351,12 @@ class Menu:
         self.message_display.config(state='disabled')
 
     def update_participants_list(self, participants):
-        self.participants_list.delete(0, tk.END)  # Xóa danh sách hiện tại
+        for row in self.participants_tree.get_children():
+            self.participants_tree.delete(row)  # Xóa danh sách hiện tại
         for participant in participants:
             ip, username, join_time = participant
-            self.participants_list.insert(tk.END,
-                                          f"{ip} - {username} - Joined at {join_time}")  # Hiển thị IP, tên, và thời gian
+            self.participants_tree.insert("", tk.END, values=(ip, username, join_time))  # Thêm thông tin vào Treeview
+
 
 if __name__ == "__main__":
     root = tk.Tk()
